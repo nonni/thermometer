@@ -34,9 +34,11 @@ line_struct = {
 
 def parse_stations(filename, db_host, db_name, db_port=27017):
     """
-    Parse station csv file and add data to mongodb under a 
-    collection called stations.
+    Parse station csv file (ftp://ftp.ncdc.noaa.gov/pub/data/gsod/ish-history.csv)
+    and add data to mongodb under a collection called stations.
     """
+    #Clamp within -180,180 so mongodb accepts the value.
+    clamp_loc = lambda x: max(-179.999, min(x, 179.999))
     #Open file
     f = open('data/ish-history.csv', 'r')
     #Connect to database
@@ -47,23 +49,28 @@ def parse_stations(filename, db_host, db_name, db_port=27017):
     reader = csv.DictReader(f)
     documents = []
     for data in reader:
-        documents.append({
-            'usaf': data['USAF'],
-            'wban': data['WBAN'],
-            'station_name': data['STATION NAME'],
-            'country': data['CTRY'],
-            'fips': data['FIPS'],
-            'state': data['STATE'],
-            'call': data['CALL'],
-            'lat': float(data['LAT'])*0.001 if data['LAT'] and data['LAT'] != '-999999' else None,
-            'lon': float(data['LON'])*0.001 if data['LON'] and data['LON'] != '-999999' else None,
-            'elevation': float(data['ELEV(.1M)'])*0.1 if data['ELEV(.1M)'] and data['ELEV(.1M)'] != '-99999' else None,
-            'begin': datetime.strptime(data['BEGIN'], '%Y%m%d') if data['BEGIN'] else None,
-            'end': datetime.strptime(data['END'], '%Y%m%d') if data['END'] else None
-        })
+        #We are only interested in stations with usable lat,lon values.
+        if data['LON'] and data['LON'] != '-999999' and data['LAT'] and data['LAT'] != '-999999':
+            documents.append({
+                'usaf': data['USAF'],
+                'wban': data['WBAN'],
+                'station_name': data['STATION NAME'],
+                'country': data['CTRY'],
+                'fips': data['FIPS'],
+                'state': data['STATE'],
+                'call': data['CALL'],
+                'loc': { 
+                    'long': clamp_loc(float(data['LON'])*0.001),
+                    'lat': clamp_loc(float(data['LAT'])*0.001)
+                },
+                'elevation': float(data['ELEV(.1M)'])*0.1 if data['ELEV(.1M)'] and data['ELEV(.1M)'] != '-99999' else None,
+                'begin': datetime.strptime(data['BEGIN'], '%Y%m%d') if data['BEGIN'] else None,
+                'end': datetime.strptime(data['END'], '%Y%m%d') if data['END'] else None
+            })
     print "Stations: %s" % len(documents)
-    print documents[1000]
     f.close()
+    #Dump to mongodb
+    db.stations.insert(documents, safe=True)
 
 
 def parse_op(filename):

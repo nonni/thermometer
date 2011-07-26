@@ -2,4 +2,5 @@ Parse weather data from NOAA Satellite and Information Service (http://www.ncdc.
 
 
 Install mongodb
+make sure geospatial indexing is enabled for stations collection "db.stations.ensureIndex( { loc : "2d" } )"
 
