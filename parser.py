@@ -32,7 +32,7 @@ line_struct = {
     'frshtt': '133:138',         #?
 }
 
-def parse_stations(filename, db_host, db_name, db_port=27017):
+def parse_stations(filename, db_host, db_name, db_port=27017, dry=False):
     """
     Parse station csv file (ftp://ftp.ncdc.noaa.gov/pub/data/gsod/ish-history.csv)
     and add data to mongodb under a collection called stations.
@@ -70,11 +70,16 @@ def parse_stations(filename, db_host, db_name, db_port=27017):
     print "Stations: %s" % len(documents)
     f.close()
     #Dump to mongodb
-    db.stations.insert(documents, safe=True)
+    if not dry:
+        db.stations.insert(documents, safe=True)
 
 
-def parse_op(filename):
+def parse_op(filename, db_host, db_name, db_port=27017, dry=False):
     fahren_to_celc = lambda f: (f-32)*(5.0/9.0)
+    #Connect to database
+    connection = pymongo.Connection(db_host, db_port)
+    db = connection[db_name]
+
     f = open(filename, 'r')
     f.readline()
 
@@ -82,6 +87,7 @@ def parse_op(filename):
     for line in f.readlines():
         line_dict = {}
         for key, value in line_struct.items():
+            #Read line and add values to dict using line_struct.
             i1, i2 = value.split(':')
             line_dict[key] = line.__getslice__(int(i1), int(i2))
             
@@ -94,5 +100,9 @@ def parse_op(filename):
         data.append(line_dict)
     f.close()
 
+    print "Observations: %s" % len(data)
     print data[100]
-    print len(data)
+
+    if not dry:
+        db.observations.insert(data, safe=True)
+
