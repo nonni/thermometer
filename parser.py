@@ -41,7 +41,7 @@ def parse_stations(filename, db_host, db_name, db_port=27017, update=False, dry=
     #Clamp within -180,180 so mongodb accepts the value.
     clamp_loc = lambda x: max(-179.999, min(x, 179.999))
     #Open file
-    f = open('data/ish-history.csv', 'r')
+    f = open(filename, 'r')
     #Connect to database
     connection = pymongo.Connection(db_host, db_port)
     db = connection[db_name]
@@ -50,6 +50,7 @@ def parse_stations(filename, db_host, db_name, db_port=27017, update=False, dry=
     reader = csv.DictReader(f)
     documents = []
     for data in reader:
+        #print '%s - %s' % (data['USAF'], data['WBAN'])
         #We are only interested in stations with usable lat,lon values.
         if data['LON'] and data['LON'] != '-999999' and data['LAT'] and data['LAT'] != '-999999':
             doc = {
@@ -69,7 +70,7 @@ def parse_stations(filename, db_host, db_name, db_port=27017, update=False, dry=
                 'end': datetime.strptime(data['END'], '%Y%m%d') if data['END'] else None
             }
             if update:
-                db_doc = db.stations.find_one({'usaf': data['USAF'], 'wban': data['wban']})
+                db_doc = db.stations.find_one({'usaf': data['USAF'], 'wban': data['WBAN']})
                 if db_doc:
                     db_doc.update(doc)
                     db.stations.save(db_doc)
@@ -136,18 +137,19 @@ def update_stations(ftp_host, db_host, db_name):
 
     filename = ''
     if 'ish-history.csv' in conn.nlst():
-        with tempfile.NamedTemporaryFile(delete=False) as tmp:
-            filename = tmp.name
-            print tmp.name
-            print "Downloading ish-history"
-            ret = conn.retrbinary('RETR ish-history.csv', tmp.file.write)
-            if ret != '226 Transfer complete':
-                print "Unable to fetch ish-history.csv"
-            else:
-                print "Running parse stations for %s" % filename
-                parse_stations(filename, db_host, db_name, update=True)
-                print "Cleanup %s" % filename
-                print "Fin"
+        tmp = tempfile.NamedTemporaryFile(delete=False)
+        filename = tmp.name
+        print tmp.name
+        print "Downloading ish-history"
+        ret = conn.retrbinary('RETR ish-history.csv', tmp.file.write)
+        tmp.file.close()
+        if ret != '226 Transfer complete':
+            print "Unable to fetch ish-history.csv"
+        else:
+            print "Running parse stations for %s" % filename
+            parse_stations(filename, db_host, db_name, update=True)
+            print "Cleanup %s" % filename
+            print "Fin"
     else:
         print "ish-history.csv not found"
             
