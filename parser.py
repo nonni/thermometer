@@ -1,4 +1,5 @@
-import csv, pymongo
+import os, csv, tempfile, pymongo
+from ftplib import FTP
 from datetime import datetime
 
 #Detailed info on file structure can be found here:
@@ -32,7 +33,7 @@ line_struct = {
     'frshtt': '133:138',         #?
 }
 
-def parse_stations(filename, db_host, db_name, db_port=27017, dry=False):
+def parse_stations(filename, db_host, db_name, db_port=27017, update=False, dry=False):
     """
     Parse station csv file (ftp://ftp.ncdc.noaa.gov/pub/data/gsod/ish-history.csv)
     and add data to mongodb under a collection called stations.
@@ -51,7 +52,7 @@ def parse_stations(filename, db_host, db_name, db_port=27017, dry=False):
     for data in reader:
         #We are only interested in stations with usable lat,lon values.
         if data['LON'] and data['LON'] != '-999999' and data['LAT'] and data['LAT'] != '-999999':
-            documents.append({
+            doc = {
                 'usaf': data['USAF'],
                 'wban': data['WBAN'],
                 'station_name': data['STATION NAME'],
@@ -66,11 +67,18 @@ def parse_stations(filename, db_host, db_name, db_port=27017, dry=False):
                 'elevation': float(data['ELEV(.1M)'])*0.1 if data['ELEV(.1M)'] and data['ELEV(.1M)'] != '-99999' else None,
                 'begin': datetime.strptime(data['BEGIN'], '%Y%m%d') if data['BEGIN'] else None,
                 'end': datetime.strptime(data['END'], '%Y%m%d') if data['END'] else None
-            })
+            }
+            if update:
+                db_doc = db.stations.find_one({'usaf': data['USAF']})
+                if db_doc:
+                    db_doc.update(doc)
+                    db.stations.save(db_doc)
+            else:
+                documents.append(doc)
     print "Stations: %s" % len(documents)
     f.close()
     #Dump to mongodb
-    if not dry:
+    if not dry and documents:
         db.stations.insert(documents, safe=True)
 
 
@@ -105,4 +113,30 @@ def parse_op(filename, db_host, db_name, db_port=27017, dry=False):
 
     if not dry:
         db.observations.insert(data, safe=True)
+
+
+def update_stations(ftp_host, db_host, db_name):
+    conn = FTP(ftp_host)
+    conn.login()
+    conn.cwd('pub/data/gsod/')
+
+    filename = ''
+    if 'ish-history.csv' in conn.nlst():
+        with tempfile.NamedTemporaryFile(delete=False) as tmp:
+            filename = tmp.name
+            print tmp.name
+            print "Downloading ish-history"
+            ret = conn.retrbinary('RETR ish-history.csv', tmp.file.write)
+            if ret != '226 Transfer complete':
+                print "Unable to fetch ish-history.csv"
+            else:
+                print "Running parse stations for %s" % filename
+                parse_stations(filename, db_host, db_name, update=True)
+                print "Cleanup %s" % filename
+                print "Fin"
+    else:
+        print "ish-history.csv not found"
+            
+    conn.close()
+    return False
 
