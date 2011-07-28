@@ -1,4 +1,4 @@
-import os, csv, tempfile, pymongo
+import os, csv, tempfile, re, gzip, pymongo
 from ftplib import FTP
 from datetime import datetime
 
@@ -69,27 +69,31 @@ def parse_stations(filename, db_host, db_name, db_port=27017, update=False, dry=
                 'end': datetime.strptime(data['END'], '%Y%m%d') if data['END'] else None
             }
             if update:
-                db_doc = db.stations.find_one({'usaf': data['USAF']})
+                db_doc = db.stations.find_one({'usaf': data['USAF'], 'wban': data['wban']})
                 if db_doc:
                     db_doc.update(doc)
                     db.stations.save(db_doc)
+                else:
+                    documents.append(doc)
             else:
                 documents.append(doc)
-    print "Stations: %s" % len(documents)
+    print "New Stations: %s" % len(documents)
     f.close()
     #Dump to mongodb
     if not dry and documents:
         db.stations.insert(documents, safe=True)
 
 
-def parse_op(filename, db_host, db_name, db_port=27017, dry=False):
+def parse_op(filename, db_host, db_name, db_port=27017, dry=False, update=False):
     fahren_to_celc = lambda f: (f-32)*(5.0/9.0)
     #Connect to database
     connection = pymongo.Connection(db_host, db_port)
     db = connection[db_name]
 
-    f = open(filename, 'r')
+    #Read file content
+    f = gzip.open(filename, 'r') if filename.endswith('.gz') else open(filename, 'r')
     f.readline()
+    updated = 0
 
     data = []
     for line in f.readlines():
@@ -105,13 +109,23 @@ def parse_op(filename, db_host, db_name, db_port=27017, dry=False):
         line_dict['max_temp'] = round(fahren_to_celc(float(line_dict['max_temp']))) if line_dict['max_temp'] != '9999.9' else None
         line_dict['min_temp'] = round(fahren_to_celc(float(line_dict['min_temp']))) if line_dict['min_temp'] != '9999.9' else None
         
-        data.append(line_dict)
+        if update:
+            db_doc = db.observations.find_one({'station': line_dict['station'], 'wban': line_dict['wban'], 'date': line_dict['date']})
+            if db_doc and not dry:
+                db_doc.update(line_dict)
+                db.stations.save(db_doc)
+                updated += 1
+            else:
+                data.append(line_dict)
+        else:
+            data.append(line_dict)
     f.close()
 
-    print "Observations: %s" % len(data)
-    print data[100]
+    print "%s - %s/%s" % (filename, len(data), updated)
+    #print "New Observations: %s" % len(data)
+    #print "Updated Observations: %s" % updated
 
-    if not dry:
+    if not dry and data:
         db.observations.insert(data, safe=True)
 
 
@@ -140,3 +154,31 @@ def update_stations(ftp_host, db_host, db_name):
     conn.close()
     return False
 
+
+def update_observations(year, ftp_host, db_host, db_name):
+    """
+    Update observations from a specified year. Downloads 
+    
+    """
+    reg = re.compile('[0-9]{6}\-[0-9]{5}\-[0-9]{4}\.op\.gz')
+    conn = FTP(ftp_host)
+    conn.login()
+    conn.cwd('pub/data/gsod/%s' % year)
+    tmpd = tempfile.mkdtemp()
+
+    for file in conn.nlst():
+        if reg.match(file):
+            #File is observation file.
+            f = open('%s/%s' % (tmpd, file), 'wb')
+            ret = conn.retrbinary('RETR %s' % file, f.write)
+            f.close()
+            if ret != '226 Transfer complete':
+                print "Unable to fetch %s" % file
+                print ret
+            else:
+                #print "running parse_op for %s/%s " % (tmpd, file) 
+                parse_op("%s/%s" % (tmpd, file), db_host, db_name, update=True)
+                #print "Done"
+        #break
+
+    print "Done"
