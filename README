@@ -6,6 +6,6 @@ Configuring Mongodb:
 Make sure geospatial indexing is enabled for the stations collection:
     "db.stations.ensureIndex( { loc : "2d" } )"
 It is also be good idea to create some indexes to speed up lookup queries:
-    "db.stations.ensureIndex({usaf: 1, wban:1})
+    "db.stations.ensureIndex({usaf: 1, wban:1})"
     "db.observations.ensureIndex({date: 1, station: 1, wban: 1})"
 

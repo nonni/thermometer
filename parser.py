@@ -37,6 +37,15 @@ def parse_stations(filename, db_host, db_name, db_port=27017, update=False, dry=
     """
     Parse station csv file (ftp://ftp.ncdc.noaa.gov/pub/data/gsod/ish-history.csv)
     and add data to mongodb under a collection called stations.
+
+    parameters:
+        filename - path to stations csv file.
+        db_host  - Host of a mongodb database.
+        db_name  - Name of database used to store values, should have
+        dry      - Dry only reads the file and does not save the values to the
+                   database.
+        update   - Check if station is already in database, if it is
+                   present update the station, will add new ones as well.
     """
     #Clamp within -180,180 so mongodb accepts the value.
     clamp_loc = lambda x: max(-179.999, min(x, 179.999))
@@ -86,6 +95,18 @@ def parse_stations(filename, db_host, db_name, db_port=27017, update=False, dry=
 
 
 def parse_op(filename, db_host, db_name, db_port=27017, dry=False, update=False):
+    """
+    Parse an observation file.
+
+    parameters:
+        filename - path to observations file (.op or .op.gz)
+        db_host  - Host of a mongodb database.
+        db_name  - Name of database used to store values, should have
+        dry      - Dry only reads the file and does not save the values to the
+                   database.
+        update   - Check if observation is already in database, if it is
+                   present update the observation, will add new ones as well.
+    """
     fahren_to_celc = lambda f: (f-32)*(5.0/9.0)
     #Connect to database
     connection = pymongo.Connection(db_host, db_port)
@@ -131,6 +152,16 @@ def parse_op(filename, db_host, db_name, db_port=27017, dry=False, update=False)
 
 
 def update_stations(ftp_host, db_host, db_name):
+    """
+    Downloads the stations definition file from ftp_host and updates the
+    definitions in db_name on db_host.
+
+    parameters:
+        ftp_host - FTP server to fetch the information from (ftp.ncdc.noaa.gov)
+        db_host  - Host of a mongodb database.
+        db_name  - Name of database used to store values, should have
+                   geospatial indexing enabled.
+    """
     conn = FTP(ftp_host)
     conn.login()
     conn.cwd('pub/data/gsod/')
@@ -159,8 +190,13 @@ def update_stations(ftp_host, db_host, db_name):
 
 def update_observations(year, ftp_host, db_host, db_name):
     """
-    Update observations from a specified year. Downloads 
-    
+    Update observations from a specified year.
+
+    parameters:
+        year     - Download observations from this year (1928-2011).
+        ftp_host - FTP server to fetch the information from (ftp.ncdc.noaa.gov)
+        db_host  - Host of a mongodb database.
+        db_name  - Name of database used to store values, should have
     """
     reg = re.compile('[0-9]{6}\-[0-9]{5}\-[0-9]{4}\.op\.gz')
     conn = FTP(ftp_host)
