@@ -1,4 +1,4 @@
-import os, csv, tempfile, re, gzip, pymongo
+import os, csv, tempfile, re, gzip, pymongo, tarfile, glob
 from ftplib import FTP
 from datetime import datetime
 
@@ -218,5 +218,42 @@ def update_observations(year, ftp_host, db_host, db_name):
                 parse_op("%s/%s" % (tmpd, file), db_host, db_name, update=True)
                 #print "Done"
         #break
+    #TODO: cleanup temp dir
 
     print "Done"
+
+def update_observations_batch(year, ftp_host, db_host, db_name):
+    """
+    Update observations from a specified year, download tar archive instead
+    of individual .op.gz files.
+
+    parameters:
+        year     - Download observations from this year (1928-2011).
+        ftp_host - FTP server to fetch the information from (ftp.ncdc.noaa.gov)
+        db_host  - Host of a mongodb database.
+        db_name  - Name of database used to store values, should have
+    """
+    conn = FTP(ftp_host)
+    conn.login()
+    conn.cwd('pub/data/gsod/%s' % year)
+    tmpd = tempfile.mkdtemp()
+    print tmpd
+
+    f = open('%s/gsod_%s.tar' % (tmpd, year), 'wb')
+    ret = conn.retrbinary('RETR gsod_%s.tar' % year, f.write)
+    f.close()
+    if ret != '226 Transfer complete':
+        print "Unable to fetch %s" % file
+        print ret
+    else:
+        #print "running parse_op for %s/%s " % (tmpd, file)
+        tar = tarfile.open('%s/gsod_%s.tar' % (tmpd, year))
+        tar.extractall(tmpd)
+        tar.close()
+        for op in glob.glob('%s/*.op.gz' % tmpd):
+            parse_op(op, db_host, db_name, update=True)
+
+    #Cleanup...
+    os.removedirs(tmpd)
+
+
